@@ -4,7 +4,7 @@ Download this tool to extract USDA-FSA Common Land Units into a File Geodatabase
 This tool will extract USDA-FSA Common Land Units (CLU) from the authoritative CLU Web Feature Service hosted on the USDA-NRCS Geoportal 10.6.1 based on an area of interest. The CLU dataset consists of digitized farm tract and field boundaries and associated attribute data.
 
 ## Usage:
-   - This tool can be used in ArcGIS or ArcGIS Pro.
+   - This tool can be used in ArcGIS or ArcGIS Pro and was tested in ArcGIS 10.7.1 and ArcGIS Pro 2.4.3
    - CLU Web Feature service used is https://gis.sc.egov.usda.gov/appserver/rest/services/common_land_units/common_land_units/FeatureServer/0/query
 
    - User must be logged into the NRCS GeoPortal: https://gis.sc.egov.usda.gov/portal/
