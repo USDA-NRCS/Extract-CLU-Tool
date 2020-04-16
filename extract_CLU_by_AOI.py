@@ -673,6 +673,7 @@ def createListOfJSONextents_ArcMap(inFC,RESTurl):
            return False
 
         AddMsgAndPrint("\nThere are approximately " + splitThousands(countQuery['count']) + " CLUs within AOI")
+        bSpatialRefUpdate = False
 
         # if count is within max records allowed no need to proceed
         if countQuery['count'] <= maxRecordCount:
@@ -686,7 +687,6 @@ def createListOfJSONextents_ArcMap(inFC,RESTurl):
             splitNum = 0               # arbitrary number to keep track of unique files
             subDividedFCList = list()  # list containing recycled fcs to be split
             subDividedFCList.append(inFC)
-            bSpatialRefUpdate = False
 
             # make sure arcmap coord system is the same as the AOI
             # If not set it AOI spatial reference.
@@ -1077,6 +1077,7 @@ if __name__ == '__main__':
         arcpy.env.overwriteOutput = True
         AOIspatialRef = arcpy.Describe(AOIpath).spatialReference
         arcpy.env.outputCoordinateSystem = AOIspatialRef
+        arcpy.env.geographicTransformations = "WGS_1984_(ITRF00)_To_NAD_1983"
 
         #scratchWS = r'O:\NRCS_Engineering_Tools_ArcPro\NRCS_Engineering_Tools_ArcPro_Update.gdb'
         scratchWS = arcpy.env.scratchWorkspace
