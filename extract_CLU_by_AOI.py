@@ -74,6 +74,21 @@
 #   generated.  They were based on the coord system of the data frame vs. layer.
 #   Introduced code to temporarily change the coord system of the data frame to the AOI.
 
+# ==========================================================================================
+# Modified 4/16/2020
+# - Problem: There is a shift in the CLU output feature class when compared to a local CLU
+#   shapefile that comes from FSA. The CLU WFS is in WGS84 and the output is written in the
+#   same coordinate system as the user input AOI.
+#   Solution: An environmental variable was introduced to handle geographic transformations
+#   for tools that honor an output coordinate system environment. The geographic transformation
+#   used is "WGS_1984_(ITRF00)_To_NAD_1983"
+
+# - The tool has been updated to fix the bSpatialRefUpdate. This issue only affected execution
+#   in ArcMap.
+#   Solution: boolean variable 'bSpatialRefUpdate' is used to determine whether the coordinate
+#   system of the user-defined AOI is the same as the ArcMap dataframe. This variable was relocated
+#   outside of nested statement.
+
 #-------------------------------------------------------------------------------
 
 ## ==============================================================================================================================
