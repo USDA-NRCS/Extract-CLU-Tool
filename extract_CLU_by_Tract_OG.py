@@ -1,5 +1,5 @@
 #-------------------------------------------------------------------------------
-# Name:        Extract CLUs by AOI
+# Name:        Extract CLUs by Tract
 # Purpose:
 #
 # Author: Adolfo.Diaz
@@ -88,6 +88,12 @@
 #   Solution: boolean variable 'bSpatialRefUpdate' is used to determine whether the coordinate
 #   system of the user-defined AOI is the same as the ArcMap dataframe. This variable was relocated
 #   outside of nested statement.
+
+# ==========================================================================================
+# Modified 7/20/2020
+# - Made a copy of the extract_CLU_by_AOI script and renamed it to extract_CLU_by_Tract in order
+#   to modify the parameters to query by Admin State - Admin County - Admin Tract.  This script
+#   will be used by the National Wetland Compliance tool.
 
 #-------------------------------------------------------------------------------
 
@@ -880,11 +886,11 @@ def createOutputFC(metadata,outputWS,shape="POLYGON"):
         Return False if error ocurred."""
 
     try:
-        # output FC will the 'CLU_' as a prefix along with AOI name
-        newFC = outputWS + os.sep + "CLU_" + os.path.basename(AOI)
+        # output FC will have the 'CLU_' as a prefix along with the state, county and tract number
+        newFC = outputWS + os.sep + "CLU_" + str(adminState) + "_" + str(adminCounty) + "_" + str(tractNumber)
 
-        AddMsgAndPrint("\nCreating New Feature Class: " + "CLU_" + os.path.basename(AOI))
-        arcpy.SetProgressorLabel("Creating New Feature Class: " + "CLU_" + os.path.basename(AOI))
+        AddMsgAndPrint("\nCreating New Feature Class: " + os.path.basename(newFC))
+        arcpy.SetProgressorLabel("Creating New Feature Class: " + os.path.basename(newFC))
 
         # set the spatial Reference to same as WFS
         # Probably WGS_1984_Web_Mercator_Auxiliary_Sphere
@@ -943,7 +949,7 @@ def createOutputFC(metadata,outputWS,shape="POLYGON"):
         arcpy.CreateFeatureclass_management(outputWS, os.path.basename(newFC), shape, "", "DISABLED", "DISABLED", outputCS)
 
         # Add fields from fieldDict to mimic WFS
-        arcpy.SetProgressor("step", "Adding Fields to " + "CLU_" + os.path.basename(AOI),0,len(fieldDict),1)
+        arcpy.SetProgressor("step", "Adding Fields to " + os.path.basename(newFC),0,len(fieldDict),1)
         for field,params in fieldDict.items():
             try:
                 fldLength = params[1]
@@ -963,6 +969,82 @@ def createOutputFC(metadata,outputWS,shape="POLYGON"):
     except:
         errorMsg()
         AddMsgAndPrint("\tFailed to create scratch " + newFC + " Feature Class",2)
+        return False
+
+## ===================================================================================
+def getCLUgeometryByTractQuery(sqlQuery,fc,RESTurl):
+    """ This funciton will will retrieve CLU geometry from the CLU WFS and assemble
+        into the CLU fc along with the attributes associated with it.
+        It is intended to receive requests that will return records that are
+        below the WFS record limit"""
+
+    try:
+
+        params = urllibEncode({'f': 'json',
+                               'where':sqlQuery,
+                               'geometryType':'esriGeometryPolygon',
+                               'returnGeometry':'true',
+                               'outFields': '*',
+                               'token': portalToken['token']})
+
+        # Send request to feature service; The following dict keys are returned:
+        # ['objectIdFieldName', 'globalIdFieldName', 'geometryType', 'spatialReference', 'fields', 'features']
+        geometry = submitFSquery(RESTurl,params)
+
+        if not geometry:
+           return False
+
+        # Insert Geometry
+        with arcpy.da.InsertCursor(fc, [fld for fld in fields]) as cur:
+
+            arcpy.SetProgressor("step", "Assembling Geometry", 0, len(geometry['features']),1)
+
+            # Iterenate through the 'features' key in geometry dict
+            # 'features' contains geometry and attributes
+            for rec in geometry['features']:
+
+                arcpy.SetProgressorLabel("Assembling Geometry")
+                values = list()    # list of attributes
+
+                polygon = json.dumps(rec['geometry'])   # u'geometry': {u'rings': [[[-89.407702228, 43.334059191999984], [-89.40769642800001, 43.33560779300001]}
+                attributes = rec['attributes']          # u'attributes': {u'land_unit_id': u'73F53BC1-E3F8-4747-B51F-E598EE445E47'}}
+
+                for fld in fields:
+                    if fld == "SHAPE@JSON":
+                        continue
+
+                    # DATE values need to be converted from Unix Epoch format
+                    # to dd/mm/yyyy format so that it can be inserted into fc.
+                    elif fldsDict[fld][0] == 'DATE':
+                        dateVal = attributes[fld]
+                        if not dateVal in (None,'null','','Null'):
+                            epochFormat = float(attributes[fld]) # 1609459200000
+
+                            # Convert to seconds from milliseconds and reformat
+                            localFormat = time.strftime('%m/%d/%Y',time.gmtime(epochFormat/1000))   # 01/01/2021
+                            values.append(localFormat)
+                        else:
+                            values.append(None)
+
+                    else:
+                        values.append(attributes[fld])
+
+                # geometry goes at the the end
+                values.append(polygon)
+                cur.insertRow(values)
+                arcpy.SetProgressorPosition()
+
+        arcpy.ResetProgressor()
+        arcpy.SetProgressorLabel("")
+        del cur
+
+        return True
+
+    except:
+        try: del cur
+        except: pass
+
+        errorMsg()
         return False
 
 ## ===================================================================================
@@ -1051,21 +1133,28 @@ def getCLUgeometryByExtent(JSONextent,fc,RESTurl):
 ## ====================================== Main Body ==================================
 # Import modules
 import sys, string, os, traceback
-import urllib, re, time, json
-import arcgisscripting, arcpy
-from arcpy import env
-import random
+import urllib, re, time, json, random
+import arcpy
 
 if __name__ == '__main__':
 
     try:
 
         """ --------------------------------------------------- Input Parameters -------------------------------"""
-        AOI = arcpy.GetParameterAsText(0)
-        outputWS = arcpy.GetParameterAsText(1)
+        adminState = arcpy.GetParameterAsText(0)
+        adminCounty = arcpy.GetParameterAsText(1)
+        tractNumber = arcpy.GetParameterAsText(2)
+        outSpatialRef = arcpy.GetParameterAsText(3)
+        outputWS = arcpy.GetParameterAsText(4)
 
-        #AOI = r'O:\NRCS_Engineering_Tools_ArcPro\NRCS_Engineering_Tools_ArcPro_Update.gdb\bnd071401070404_WTSH'
-        #outputWS = r'O:\NRCS_Engineering_Tools_ArcPro\NRCS_Engineering_Tools_ArcPro_Update.gdb'
+        # if user defined output spatial reference
+        # convert it to a SR object
+        bUserDefinedSR = False
+        if outSpatialRef != '':
+            sr = arcpy.SpatialReference()
+            sr.loadFromString(outSpatialRef)
+            outSpatialRef = sr
+            bUserDefinedSR = True
 
         # Determine the ESRI product and set boolean
         productInfo = arcpy.GetInstallInfo()['ProductName']
@@ -1073,11 +1162,29 @@ if __name__ == '__main__':
          # Python 3.6 - ArcPro
         if productInfo == 'ArcGISPro':
             bArcGISPro = True
-            AOIpath = arcpy.da.Describe(AOI)['catalogPath']
             from urllib.request import Request, urlopen
             from urllib.error import HTTPError as httpErrors
             urllibEncode = urllib.parse.urlencode
             parseQueryString = urllib.parse.parse_qsl
+
+            # Get the spatial reference of the Active Map from which the tool was invoked
+            # and set the WKID as the env.outputCoordSystem
+            if not bUserDefinedSR:
+                aprx = arcpy.mp.ArcGISProject("CURRENT")
+                activeMap = aprx.activeMap
+
+                # If the tool is invoked by the catalog view vs the catalog pane
+                # an active map will not be registered so a coordinate system
+                # object cannot be obtained.  Exit.
+                try:
+                    activeMapName = activeMap.name
+                    activeMapSR = activeMap.getDefinition('V2').spatialReference['latestWkid']
+                    outSpatialRef = arcpy.SpatialReference(activeMapSR)
+                    arcpy.env.outputCoordinateSystem = outSpatialRef
+                except:
+                    AddMsgAndPrint("Could not obtain Spatial Reference from the ArcGIS Pro Map",2)
+                    AddMsgAndPrint("Run the tool from an active map or provide a Coordinate System.  Exiting!",2)
+                    exit()
 
         # Python 2.7 - ArcMap
         else:
@@ -1085,13 +1192,25 @@ if __name__ == '__main__':
             import urllib2
             import urlparse                              # This library is included in urllib in 3.7
             from urllib2 import HTTPError as httpErrors
-            AOIpath = arcpy.Describe(AOI).catalogPath
             urllibEncode = urllib.urlencode
             parseQueryString = urlparse.parse_qsl
 
+            if not bUserDefinedSR:
+
+                # If the tool is invoked by ArcCatalog then the dataframe
+                # properties is not available so a coordinate system
+                # object cannot be obtained.  Exit.
+                try:
+                    mxd = arcpy.mapping.MapDocument(r"CURRENT")
+                    df = arcpy.mapping.ListDataFrames(mxd)[0]
+                    outSpatialRef = df.spatialReference
+                    arcpy.env.outputCoordinateSystem = outSpatialRef
+                except:
+                    AddMsgAndPrint("Could not obtain Spatial Reference from the ArcMap Data Frame",2)
+                    AddMsgAndPrint("Run the tool from within ArcMap or provide a Coordinate System.  Exiting!",2)
+                    exit()
+
         arcpy.env.overwriteOutput = True
-        AOIspatialRef = arcpy.Describe(AOIpath).spatialReference
-        arcpy.env.outputCoordinateSystem = AOIspatialRef
         arcpy.env.geographicTransformations = "WGS_1984_(ITRF00)_To_NAD_1983"
 
         #scratchWS = r'O:\NRCS_Engineering_Tools_ArcPro\NRCS_Engineering_Tools_ArcPro_Update.gdb'
@@ -1145,84 +1264,63 @@ if __name__ == '__main__':
         else:
            maxRecordCount = fsMetadata['maxRecordCount']
 
-        """ ---------------------------------------------- generate JSON Extents for requests -----------------------------"""
-        # deconstructed AOI geometry in JSON
-        #jSONpolygon = [row[0] for row in arcpy.da.SearchCursor(AOI, ['SHAPE@JSON'])][0]
-
+        """ ---------------------------------------------- query by Admin State, Admin County and Tract Number -----------------------------"""
         cluRESTurl = """https://gis.sc.egov.usda.gov/appserver/rest/services/common_land_units/common_land_units/FeatureServer/0/query"""
 
-        # Get a dictionary of extents to send to WFS
-        # {'request_42': ['{"xmin":-90.15,"ymin":37.19,"xmax":-90.036,"ymax":37.26,"spatialReference":{"wkid":4326,"latestWkid":4326}}', 691]}
-        if bArcGISPro:
-            geometryEnvelopes = createListOfJSONextents(AOI,cluRESTurl)
+        # ADMIN_STATE = 29 AND ADMIN_COUNTY = 017 AND TRACT_NUMBER = 1207
+        whereClause = "ADMIN_STATE = " + str(adminState) + " AND ADMIN_COUNTY = " + str(adminCounty) + " AND TRACT_NUMBER = " + str(tractNumber)
+
+        AddMsgAndPrint("Querying GeoPortal for CLU fields where: " + whereClause)
+        if not getCLUgeometryByTractQuery(whereClause,cluFC,cluRESTurl):
+            AddMsgAndPrint("\tFailed to query by tract",2)
+
+        numOfCLUs = int(arcpy.GetCount_management(cluFC)[0])
+        if numOfCLUs > 1:
+            AddMsgAndPrint("\nThere are " + splitThousands(numOfCLUs) + " CLU fields part of Tract Number " + str(tractNumber))
         else:
-            geometryEnvelopes = createListOfJSONextents_ArcMap(AOI,cluRESTurl)
+            AddMsgAndPrint("\nThere is " + splitThousands(numOfCLUs) + " CLU field part of Tract Number " + str(tractNumber))
 
-        if not geometryEnvelopes:
-            exit()
+        """ ---------------------------------------------- Project CLU ---------------------------------------------------------------"""
+        # Project cluFC to user-defined spatial reference or the spatial
+        # reference set in the AcrGIS Pro Map or Arcmap Dataframe
 
-        cluIdentifierList = list()  # Unique list of CLUs used to avoid duplicates
-        failedRequests = dict()     # copy of geometryEnvelopes items that failed
-        i = 1                       # request number
+        fromSR = arcpy.Describe(cluFC).spatialReference
+        toSR = outSpatialRef
+        geoTransformation = arcpy.ListTransformations(fromSR,toSR)[0]
 
-        for envelope in geometryEnvelopes.items():
-            extent = envelope[1][0]
-            numOfCLUs = envelope[1][1]
-            AddMsgAndPrint("Submitting Request " + str(i) + " of " + splitThousands(len(geometryEnvelopes)) + " - " + str(numOfCLUs) + " CLUs")
-
-            # If request fails add to failed Requests for a 2nd attempt
-            if not getCLUgeometryByExtent(extent,cluFC,cluRESTurl):
-               failedRequests[envelope[0]] = envelope[1]
-
-            i+=1
-
-        # Process failed requests as a 2nd attempt.
-        if len(failedRequests) > 1:
-
-           # All Requests failed; Not trying 2nd attempt
-           if len(failedRequests) == len(geometryEnvelopes):
-              AddMsgAndPrint("ALL WFS requests failed.....exiting!")
-              exit()
-
-           else:
-                AddMsgAndPrint("There were " + str(len(failedRequests)) + " failed requests -- Attempting to re-download.")
-                i = 1                       # request number
-                for envelope in failedRequests.items():
-                    extent = envelope[1][0]
-                    numOfCLUs = envelope[1][1]
-                    AddMsgAndPrint("Submitting Request " + str(i) + " of " + splitThousands(len(failedRequests)) + " - " + str(numOfCLUs) + " CLUs")
-
-                    # If request fails add to failed Requests for a 2nd attempt
-                    if not getCLUgeometryByExtent(extent,cluFC,cluRESTurl):
-                       AddMsgAndPrint("This reques failed again")
-                       AddMsgAndPrint(envelope)
-
-        # Filter CLUs by AOI boundary
-        arcpy.MakeFeatureLayer_management(cluFC,"CLUFC_LYR")
-        arcpy.SelectLayerByLocation_management("CLUFC_LYR", "INTERSECT", AOI, "", "NEW_SELECTION")
-
-        newCLUfc = outputWS + os.sep + "clu_temp"
-        arcpy.CopyFeatures_management("CLUFC_LYR",newCLUfc)
+        projected_CLU = cluFC + "_prj"
+        arcpy.Project_management(cluFC,projected_CLU,toSR,geoTransformation)
 
         arcpy.Delete_management(cluFC)
-        arcpy.Delete_management("CLUFC_LYR")
+        arcpy.Rename_management(projected_CLU,projected_CLU[0:-4])
+        cluFC = projected_CLU[0:-4]
 
-        arcpy.env.workspace = outputWS
-        arcpy.Rename_management(newCLUfc,"CLU_" + os.path.basename(AOI))
-
-        AddMsgAndPrint("\nThere are " + splitThousands(arcpy.GetCount_management(cluFC)[0]) + " CLUs in your AOI.  Done!\n")
+        AddMsgAndPrint(" ",1)
+        AddMsgAndPrint("\nProjected CLU Feature class",1)
+        AddMsgAndPrint("FROM: " + str(fromSR.name),1)
+        AddMsgAndPrint("TO: " + str(toSR),1)
+        AddMsgAndPrint("Geographic transformation used: " + str(geoTransformation),1)
 
         # Add final CLU layer to either ArcPro or ArcMap
         if bArcGISPro:
-            # Add the data to ArcPro
+            # Add the data to the first ArcPro Map found
             aprx = arcpy.mp.ArcGISProject("CURRENT")
+            aprxMaps = aprx.listMaps()
 
-            # Find the map from which the AOI came from
-            for maps in aprx.listMaps():
-                for lyr in maps.listLayers():
-                    if lyr.name == os.path.basename(AOI):
-                       maps.addDataFromPath(cluFC)
-                       break
+            try:
+                activeMap = aprx.activeMap
+                activeMapName = activeMap.name
+
+                for map in aprxMaps:
+                    if map.name == activeMapName:
+                        map.addDataFromPath(cluFC)
+                        AddMsgAndPrint(os.path.basename(cluFC) + " added to " + map.name + " Map")
+                        break
+
+            except:
+                map = aprx.listMaps()[0]
+                map.addDataFromPath(cluFC)
+                AddMsgAndPrint(os.path.basename(cluFC) + " added to " + map.name + " Map")
 
         else:
             # could be executed from ArcCatalog
@@ -1236,3 +1334,4 @@ if __name__ == '__main__':
 
     except:
         errorMsg()
+
