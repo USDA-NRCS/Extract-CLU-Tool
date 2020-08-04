@@ -595,6 +595,8 @@ def getCLUgeometryByTractQuery(sqlQuery,fc,RESTurl):
 def start(state,county,trctNmbr,outSR,outWS,addCLUtoSoftware=False):
 
     try:
+        # Use most of the cores on the machine where ever possible
+        arcpy.env.parallelProcessingFactor = "75%"
 
         global bArcGISPro
         global adminState, adminCounty, tractNumber, outSpatialRef, outputWS
@@ -684,9 +686,6 @@ def start(state,county,trctNmbr,outSR,outWS,addCLUtoSoftware=False):
 ##        if not arcpy.Exists(scratchWS):
 ##            scratchWS = setScratchWorkspace()
 ##            arcpy.env.scratchWorkspace = scratchWS
-
-        # Use most of the cores on the machine where ever possible
-        arcpy.env.parallelProcessingFactor = "75%"
 
         """ ---------------------------------------------- ArcGIS Portal Information ---------------------------"""
         nrcsPortal = 'https://gis.sc.egov.usda.gov/portal/'
