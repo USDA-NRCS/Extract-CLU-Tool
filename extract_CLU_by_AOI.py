@@ -89,6 +89,18 @@
 #   system of the user-defined AOI is the same as the ArcMap dataframe. This variable was relocated
 #   outside of nested statement.
 
+# ==========================================================================================
+# Modified 10/23/2020
+# - Problem: Couldn't determine the # of WFS requests using ArcGIS Pro 2.5.2
+#            It turns out SplitByAttributes_analysis tool no longer supports an "in_memory"
+#            target workspace, however, I found no documentation that would direclty
+#            support this conclusion.  "in_memory" is legacy to ArcMap and "memory"
+#            has been adopted by ArcGIS pro
+#            https://pro.arcgis.com/en/pro-app/help/analysis/geoprocessing/basics/the-in-memory-workspace.htm
+#   Solution: Substitute the "in_memory" target workspace SplitByAttributes_analysis tool
+#             with the scratch workspace.  As a result, the scratch workspace was updated to
+#             handle windows 10 variables and homepaths.
+
 #-------------------------------------------------------------------------------
 
 ## ==============================================================================================================================
@@ -142,7 +154,42 @@ def setScratchWorkspace():
         the packageWorkspace Environment will be set as the scratchWorkspace. This
         function returns the scratchGDB environment which is set upon setting the scratchWorkspace"""
 
+##        This is a printout of my system environmmental variables - Windows 10
+##        -----------------------------------------------------------------------------------------
+##        ESRI_OS_DATADIR_LOCAL_DONOTUSE-- C:\Users\Adolfo.Diaz\AppData\Local\
+##        ESRI_OS_DIR_DONOTUSE-- C:\Users\ADOLFO~1.DIA\AppData\Local\Temp\ArcGISProTemp22096\
+##        ESRI_OS_DATADIR_ROAMING_DONOTUSE-- C:\Users\Adolfo.Diaz\AppData\Roaming\
+##        TEMP-- C:\Users\ADOLFO~1.DIA\AppData\Local\Temp\ArcGISProTemp22096\
+##        LOCALAPPDATA-- C:\Users\Adolfo.Diaz\AppData\Local
+##        PROGRAMW6432-- C:\Program Files
+##        COMMONPROGRAMFILES-- C:\Program Files\Common Files
+##        APPDATA-- C:\Users\Adolfo.Diaz\AppData\Roaming
+##        USERPROFILE-- C:\Users\Adolfo.Diaz
+##        PUBLIC-- C:\Users\Public
+##        SYSTEMROOT-- C:\windows
+##        PROGRAMFILES-- C:\Program Files
+##        COMMONPROGRAMFILES(X86)-- C:\Program Files (x86)\Common Files
+##        ALLUSERSPROFILE-- C:\ProgramData
+##        HOMEPATH-- \
+##        HOMESHARE-- \\usda.net\NRCS\home\WIMA2\NRCS\Adolfo.Diaz
+##        ONEDRIVE-- C:\Users\Adolfo.Diaz\OneDrive - USDA
+##        ARCHOME-- c:\program files\arcgis\pro\
+##        ARCHOME_USER-- c:\program files\arcgis\pro\
+##        ------------------------------------------------------------------------------------------
+
     try:
+
+        def setTempFolderAsWorkspace(sysDriveLetter):
+            tempFolder = sysDrive + os.sep + "TEMP"
+
+            if not os.path.exists(tempFolder):
+                os.makedirs(tempFolder,mode=777)
+
+            arcpy.env.scratchWorkspace = tempFolder
+            AddMsgAndPrint("\tTemporarily setting scratch workspace to: " + arcpy.env.scratchGDB,1)
+            return arcpy.env.scratchGDB
+
+
         AddMsgAndPrint("\nSetting Scratch Workspace")
         scratchWK = arcpy.env.scratchWorkspace
 
@@ -154,34 +201,15 @@ def setScratchWorkspace():
             envVariables = os.environ
 
             # get the root system drive i.e C:
-            if envVariables.has_key('SYSTEMDRIVE'):
+            if 'SYSTEMDRIVE' in envVariables:
                 sysDrive = envVariables['SYSTEMDRIVE']
             else:
                 sysDrive = None
 
-            varsToSearch = ['ESRI_OS_DATADIR_LOCAL_DONOTUSE','ESRI_OS_DIR_DONOTUSE','ESRI_OS_DATADIR_MYDOCUMENTS_DONOTUSE',
+            varsToSearch = ['HOMEDRIVE','HOMEPATH','HOMESHARE','ONEDRIVE','ARCHOME','ARCHOME_USER',
+                            'ESRI_OS_DATADIR_LOCAL_DONOTUSE','ESRI_OS_DIR_DONOTUSE','ESRI_OS_DATADIR_MYDOCUMENTS_DONOTUSE',
                             'ESRI_OS_DATADIR_ROAMING_DONOTUSE','TEMP','LOCALAPPDATA','PROGRAMW6432','COMMONPROGRAMFILES','APPDATA',
                             'USERPROFILE','PUBLIC','SYSTEMROOT','PROGRAMFILES','COMMONPROGRAMFILES(X86)','ALLUSERSPROFILE']
-
-##            """ This is a printout of my system environmmental variables - Windows 7
-##            -----------------------------------------------------------------------------------------
-##            ESRI_OS_DATADIR_LOCAL_DONOTUSE C:\Users\adolfo.diaz\AppData\Local\
-##            ESRI_OS_DIR_DONOTUSE C:\Users\ADOLFO~1.DIA\AppData\Local\Temp\6\arc3765\
-##            ESRI_OS_DATADIR_MYDOCUMENTS_DONOTUSE C:\Users\adolfo.diaz\Documents\
-##            ESRI_OS_DATADIR_COMMON_DONOTUSE C:\ProgramData\
-##            ESRI_OS_DATADIR_ROAMING_DONOTUSE C:\Users\adolfo.diaz\AppData\Roaming\
-##            TEMP C:\Users\ADOLFO~1.DIA\AppData\Local\Temp\6\arc3765\
-##            LOCALAPPDATA C:\Users\adolfo.diaz\AppData\Local
-##            PROGRAMW6432 C:\Program Files
-##            COMMONPROGRAMFILES :  C:\Program Files (x86)\Common Files
-##            APPDATA C:\Users\adolfo.diaz\AppData\Roaming
-##            USERPROFILE C:\Users\adolfo.diaz
-##            PUBLIC C:\Users\Public
-##            SYSTEMROOT :  C:\Windows
-##            PROGRAMFILES :  C:\Program Files (x86)
-##            COMMONPROGRAMFILES(X86) :  C:\Program Files (x86)\Common Files
-##            ALLUSERSPROFILE :  C:\ProgramData """
-##            """------------------------------------------------------------------------------------------"""
 
             bSetTempWorkSpace = False
 
@@ -198,21 +226,28 @@ def setScratchWorkspace():
                 scratchWSList = (scratchWK.lower()).split(os.sep)                 # [u'C:', u'Users', u'adolfo.diaz', u'Documents', u'ArcGIS', u'Default.gdb', u'']
 
                 # remove any blanks items from lists
-                if '' in varValueList: varValueList.remove('')
-                if '' in scratchWSList: scratchWSList.remove('')
+                varValueList = [val for val in varValueList if not val == '']
+                scratchWSList = [val for val in scratchWSList if not val == '']
 
-                # First element is the drive letter; remove it if they are
-                # the same otherwise review the next variable.
-                if varValueList[0] == scratchWSList[0]:
-                    scratchWSList.remove(scratchWSList[0])
-                    varValueList.remove(varValueList[0])
+                # Make sure env variables were populated
+                if len(varValueList)>0 and len(scratchWSList)>0:
 
-                # obtain a similarity ratio between the 2 lists above
-                #sM = SequenceMatcher(None,varValueList,scratchWSList)
+                    # Home drive is being used as scrathcworkspace
+                    if scratchWSList[0].lower() == envVariables['HOMEDRIVE'].lower():
+                        bSetTempWorkSpace = True
+
+                    # First element is the drive letter; remove it if they are they same.
+                    if varValueList[0] == scratchWSList[0]:
+                        varValueList.remove(varValueList[0])
+                        scratchWSList.remove(scratchWSList[0])
+                    else:
+                        continue
 
                 # Compare the values of 2 lists; order is significant
                 common = [i for i, j in zip(varValueList, scratchWSList) if i == j]
 
+                # There is commonality between the scrathWS and some env variable
+                # Proceed with creating a temp path.
                 if len(common) > 0:
                     bSetTempWorkSpace = True
                     break
@@ -220,17 +255,13 @@ def setScratchWorkspace():
             # The current scratch workspace shares 1 or more directory paths with the
             # system env variables.  Create a temp folder at root
             if bSetTempWorkSpace:
-                AddMsgAndPrint("\tCurrent Workspace: " + scratchWK,0)
+                AddMsgAndPrint("\tCurrent Workspace: " + scratchWK)
 
                 if sysDrive:
-                    tempFolder = sysDrive + os.sep + "TEMP"
+                    return setTempFolderAsWorkspace(sysDrive)
 
-                    if not os.path.exists(tempFolder):
-                        os.makedirs(tempFolder,mode=777)
-
-                    arcpy.env.scratchWorkspace = tempFolder
-                    AddMsgAndPrint("\tTemporarily setting scratch workspace to: " + arcpy.env.scratchGDB,1)
-
+                # This should never be the case.  Every computer should have a system drive (C:\)
+                # packageWorkspace is set to "IN_MEMORY"
                 else:
                     packageWS = [f for f in arcpy.ListEnvironments() if f=='packageWorkspace']
                     if arcpy.env[packageWS[0]]:
@@ -244,74 +275,64 @@ def setScratchWorkspace():
             # permissions; if write permissions are denied then set workspace to TEMP folder
             else:
                 arcpy.env.scratchWorkspace = scratchWK
+                arcpy.env.scratchGDB
 
                 if arcpy.env.scratchGDB == None:
-                    AddMsgAndPrint("\tCurrent scratch workspace: " + scratchWK + " is READ only!",0)
+                    AddMsgAndPrint("\tCurrent scratch workspace: " + scratchWK + " is READ only!")
 
                     if sysDrive:
-                        tempFolder = sysDrive + os.sep + "TEMP"
-
-                        if not os.path.exists(tempFolder):
-                            os.makedirs(tempFolder,mode=777)
-
-                        arcpy.env.scratchWorkspace = tempFolder
-                        AddMsgAndPrint("\tTemporarily setting scratch workspace to: " + arcpy.env.scratchGDB,1)
+                        return setTempFolderAsWorkspace(sysDrive)
 
                     else:
                         packageWS = [f for f in arcpy.ListEnvironments() if f=='packageWorkspace']
                         if arcpy.env[packageWS[0]]:
                             arcpy.env.scratchWorkspace = arcpy.env[packageWS[0]]
                             AddMsgAndPrint("\tTemporarily setting scratch workspace to: " + arcpy.env.scratchGDB,1)
+                            return arcpy.env.scratchGDB
 
                         else:
                             AddMsgAndPrint("\tCould not set any scratch workspace",2)
                             return False
 
                 else:
-                    AddMsgAndPrint("\tUser-defined scratch workspace is set to: "  + arcpy.env.scratchGDB,0)
+                    AddMsgAndPrint("\tUser-defined scratch workspace is set to: "  + arcpy.env.scratchGDB)
+                    return arcpy.env.scratchGDB
 
         # No workspace set (Very odd that it would go in here unless running directly from python)
         else:
-            AddMsgAndPrint("\tNo user-defined scratch workspace ",0)
+            AddMsgAndPrint("\tNo user-defined scratch workspace ")
             sysDrive = os.environ['SYSTEMDRIVE']
 
             if sysDrive:
-                tempFolder = sysDrive + os.sep + "TEMP"
-
-                if not os.path.exists(tempFolder):
-                    os.makedirs(tempFolder,mode=777)
-
-                arcpy.env.scratchWorkspace = tempFolder
-                AddMsgAndPrint("\tTemporarily setting scratch workspace to: " + arcpy.env.scratchGDB,1)
+                return setTempFolderAsWorkspace(sysDrive)
 
             else:
                 packageWS = [f for f in arcpy.ListEnvironments() if f=='packageWorkspace']
                 if arcpy.env[packageWS[0]]:
                     arcpy.env.scratchWorkspace = arcpy.env[packageWS[0]]
                     AddMsgAndPrint("\tTemporarily setting scratch workspace to: " + arcpy.env.scratchGDB,1)
+                    return arcpy.env.scratchGDB
 
                 else:
                     AddMsgAndPrint("\tCould not set scratchWorkspace. Not even to default!",2)
                     return False
 
-        #arcpy.Compact_management(arcpy.env.scratchGDB)
-        return arcpy.env.scratchGDB
-
     except:
+        errorMsg()
 
-        # All Failed; set workspace to packageWorkspace environment
-        try:
-            packageWS = [f for f in arcpy.ListEnvironments() if f=='packageWorkspace']
-            if arcpy.env[packageWS[0]]:
-                arcpy.env.scratchWorkspace = arcpy.env[packageWS[0]]
-                arcpy.Compact_management(arcpy.env.scratchGDB)
-                return arcpy.env.scratchGDB
-            else:
-                AddMsgAndPrint("\tCould not set scratchWorkspace. Not even to default!",2)
-                return False
-        except:
-            errorMsg()
-            return False
+##        # All Failed; set workspace to packageWorkspace environment
+##        try:
+##            packageWS = [f for f in arcpy.ListEnvironments() if f=='packageWorkspace']
+##            if arcpy.env[packageWS[0]]:
+##                arcpy.env.scratchWorkspace = arcpy.env[packageWS[0]]
+##                arcpy.Compact_management(arcpy.env.scratchGDB)
+##                return arcpy.env.scratchGDB
+##            else:
+##                AddMsgAndPrint("\tCould not set scratchWorkspace. Not even to default!",2)
+##                return False
+##        except:
+##            errorMsg()
+##            return False
 
 ## ===================================================================================
 def splitThousands(someNumber):
@@ -547,9 +568,9 @@ def createListOfJSONextents(inFC,RESTurl):
             AddMsgAndPrint("Determining # of WFS requests")
 
             numOfAreas = int(countQuery['count'] / 800)  # How many times the input fc will be subdivided initially
-            splitNum = 0               # arbitrary number to keep track of unique files
-            subDividedFCList = list()  # list containing recycled fcs to be split
-            subDividedFCList.append(inFC)
+            splitNum = 0                   # arbitrary number to keep track of unique files
+            subDividedFCList = list()      # list containing recycled fcs to be split
+            subDividedFCList.append(inFC)  # inFC will be the first one to be subdivided
 
             # iterate through each polygon in fc in list and d
             for fc in subDividedFCList:
@@ -557,17 +578,19 @@ def createListOfJSONextents(inFC,RESTurl):
 
                 # Subdivide fc into 2
                 subdivision_fc = "in_memory" + os.sep + os.path.basename(arcpy.CreateScratchName("subdivision",data_type="FeatureClass",workspace=scratchWS))
+                #subdivision_fc = r'O:\scratch\scratch.gdb\subdivision'
 
                 if splitNum > 0:
                    numOfAreas = 2
 
                 arcpy.SubdividePolygon_management(fc,subdivision_fc,"NUMBER_OF_EQUAL_PARTS",numOfAreas, "", "", "", "STACKED_BLOCKS")
 
-                # first iteration will be the input AOI; don't wnat to delete it
+                # first iteration will be the inFC and don't wnat to delete it
                 if splitNum > 0:
                    arcpy.Delete_management(fc)
 
-                # Add new fld to capture unique name used for the split tool to create
+                # Add new fld to capture unique name used for each subdivided polygon which the
+                # splitByAttributes tool will use.
                 newOIDfld = "objectID_TEXT"
                 expression = "assignUniqueNumber(!" + arcpy.Describe(subdivision_fc).OIDFieldName + "!)"
                 randomNum = str(random.randint(1,9999999999))
@@ -585,13 +608,14 @@ def assignUniqueNumber(oid):
 
                 # Create a fc for each subdivided polygon
                 # split by attributes was faster by 2 secs than split_analysis
-                arcpy.SplitByAttributes_analysis(subdivision_fc,"IN_MEMORY",[newOIDfld])
+                arcpy.SplitByAttributes_analysis(subdivision_fc,scratchWS,[newOIDfld])
                 arcpy.Delete_management(subdivision_fc)
 
                 # Create a list of fcs that the split tool outputs
-                #arcpy.env.workspace = scratchWS
-                arcpy.env.workspace = "IN_MEMORY"
-                #splitFCList = arcpy.ListFeatureClasses('request_' + str(splitNum) + '*')
+                arcpy.env.workspace = scratchWS
+                #arcpy.env.workspace = "in_memory"
+                #arcpy.env.workspace = r'O:\scratch\scratch.gdb'
+
                 splitFCList = arcpy.ListFeatureClasses('request_' + randomNum + '*')
 
                 # Assess each split FC to determine if it
@@ -611,6 +635,7 @@ def assignUniqueNumber(oid):
 
                     # Send geometry count request
                     countQuery = submitFSquery(RESTurl,params)
+                    print("H")
 
                     # request failed.....try once more
                     if not countQuery:
@@ -1064,8 +1089,8 @@ if __name__ == '__main__':
         AOI = arcpy.GetParameterAsText(0)
         outputWS = arcpy.GetParameterAsText(1)
 
-        #AOI = r'O:\NRCS_Engineering_Tools_ArcPro\NRCS_Engineering_Tools_ArcPro_Update.gdb\bnd071401070404_WTSH'
-        #outputWS = r'O:\NRCS_Engineering_Tools_ArcPro\NRCS_Engineering_Tools_ArcPro_Update.gdb'
+        AOI = r'I:\scratch\scratch.gdb\MS'
+        outputWS = r'I:\scratch\scratch.gdb'
 
         # Determine the ESRI product and set boolean
         productInfo = arcpy.GetInstallInfo()['ProductName']
@@ -1094,11 +1119,13 @@ if __name__ == '__main__':
         arcpy.env.outputCoordinateSystem = AOIspatialRef
         arcpy.env.geographicTransformations = "WGS_1984_(ITRF00)_To_NAD_1983"
 
-        #scratchWS = r'O:\NRCS_Engineering_Tools_ArcPro\NRCS_Engineering_Tools_ArcPro_Update.gdb'
-        scratchWS = arcpy.env.scratchWorkspace
-        if not arcpy.Exists(scratchWS):
-            scratchWS = setScratchWorkspace()
-            arcpy.env.scratchWorkspace = scratchWS
+        #scratchWS = r'O:\scratch\scratch.gdb'
+        scratchWS = setScratchWorkspace()
+        if not scratchWS:
+##            scratchWS = setScratchWorkspace()
+##            arcpy.env.scratchWorkspace = scratchWS
+            AddMsgAndPrint("Could Not set scratch Workspace",2)
+            exit()
 
         # Use most of the cores on the machine where ever possible
         arcpy.env.parallelProcessingFactor = "75%"
