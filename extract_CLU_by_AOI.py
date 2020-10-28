@@ -1089,8 +1089,8 @@ if __name__ == '__main__':
         AOI = arcpy.GetParameterAsText(0)
         outputWS = arcpy.GetParameterAsText(1)
 
-        AOI = r'I:\scratch\scratch.gdb\MS'
-        outputWS = r'I:\scratch\scratch.gdb'
+##        AOI = r'I:\scratch\scratch.gdb\MS'
+##        outputWS = r'I:\scratch\scratch.gdb'
 
         # Determine the ESRI product and set boolean
         productInfo = arcpy.GetInstallInfo()['ProductName']
@@ -1122,8 +1122,8 @@ if __name__ == '__main__':
         #scratchWS = r'O:\scratch\scratch.gdb'
         scratchWS = setScratchWorkspace()
         if not scratchWS:
-##            scratchWS = setScratchWorkspace()
-##            arcpy.env.scratchWorkspace = scratchWS
+            scratchWS = setScratchWorkspace()
+            arcpy.env.scratchWorkspace = scratchWS
             AddMsgAndPrint("Could Not set scratch Workspace",2)
             exit()
 
