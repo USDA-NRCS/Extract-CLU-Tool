@@ -334,6 +334,7 @@ def submitFSquery(url,INparams):
             resp = urllib.request.urlopen(url,INparams)  # A failure here will probably throw an HTTP exception
         # Python 2.7 - ArcMap
         else:
+            import urllib2
             req = urllib2.Request(url,INparams)
             resp = urllib2.urlopen(req)
 
@@ -622,7 +623,7 @@ def start(state,county,trctNmbr,outSR,outWS,addCLUtoSoftware=False):
         global bArcGISPro
         global adminState, adminCounty, tractNumber, outSpatialRef, outputWS
         global bUserDefinedSR
-        global urllibEncode, parseQueryString
+        global urllibEncode, parseQueryString,httpErrors
         global portalToken, fldsDict, fields
 
         adminState = state
@@ -710,8 +711,9 @@ def start(state,county,trctNmbr,outSR,outWS,addCLUtoSoftware=False):
 
         """ ---------------------------------------------- ArcGIS Portal Information ---------------------------"""
         nrcsPortal = 'https://gis.sc.egov.usda.gov/portal/'
-        portalToken = getPortalTokenInfo(nrcsPortal)
+        #portalToken = getPortalTokenInfo(nrcsPortal)
         #portalToken = {'token': 'CaQsxS5eSCBOnMVy9FA0JcKM1lFix1rf5pAdJe9RJLjlv9UVbW3uS92x9WCi0S6LmpO3EMaZkwQ1-hbZgF_wGBX_UHVZbVPComH5hhRgBDjubjXe6zPFpG-FlwQ490epn3ebKEG55FSbhihK0c2ueS0xzPaPHMA79IUGOpaeGsADPS0zNId4ofPeUI6KAwAoQu3H6ibePO5YLHgM0oVeAQv1poNf1_moeNPH3ZHU5uMuCTy8DvLGLMwuNnWw65wCYX7oBDQjoP9g8zc7cqVYmw..', 'referer': 'http://www.esri.com/AGO/780B38ED-ECB9-40FF-B734-3A7A6402C884', 'expires': 1627658762}
+        portalToken = {'token': u'snvKX5OR0vBBgQ36KnNf6o7kxZAhs5-et-GMrtOp53bDVERnftX-6TUtJRTHH46692rDXE3T-JbS0SahpNJAfb069308xnUGgiRwfCj3bFmJ8Yybn_icSugZ1MCdFxUwxkb2QEXXpTpMRNgZe0EA4j88w7JzVKOa0Fgv8tp3PvJ_Y6X85Tu-zf9wkAJG0JKBDJDgpFfD8Lw3bmjZyGn5o2v8F2PaNuisPrSid6kKN46S2jxw5O9bceRbg4YVbiqT-KPNYO0z9ksjiIDdPQRBzg..', 'expires': 1635866288L, 'referer': u'http://www.esri.com/AGO/93D5BBE7-F2B8-4508-AE91-7D01A948D52E'}
 
         if not portalToken:
            AddMsgAndPrint("Could not generate Portal Token. Exiting!",2)
@@ -861,19 +863,19 @@ import arcpy
 if __name__ == '__main__':
 
     try:
-        adminState = arcpy.GetParameterAsText(0)
-        adminCounty = arcpy.GetParameterAsText(1)
-        tractNumber = arcpy.GetParameterAsText(2)
-        outSpatialRef = arcpy.GetParameterAsText(3)
-        outputWS = arcpy.GetParameterAsText(4)
-        addToSoftware = True
+##        adminState = arcpy.GetParameterAsText(0)
+##        adminCounty = arcpy.GetParameterAsText(1)
+##        tractNumber = arcpy.GetParameterAsText(2)
+##        outSpatialRef = arcpy.GetParameterAsText(3)
+##        outputWS = arcpy.GetParameterAsText(4)
+##        addToSoftware = True
 
-##        adminState = "55"
-##        adminCounty = "025"
-##        tractNumber = "336499"
-##        outSpatialRef = "GEOGCS['GCS_WGS_1984',DATUM['D_WGS_1984',SPHEROID['WGS_1984',6378137.0,298.257223563]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]];-400 -400 1000000000;-100000 10000;-100000 10000;8.98315284119521E-09;0.001;0.001;IsHighPrecision"
-##        outputWS = r'E:\Temp\scratch.gdb'
-##        addToSoftware = False
+        adminState = "55"
+        adminCounty = "025"
+        tractNumber = "3364"
+        outSpatialRef = "GEOGCS['GCS_WGS_1984',DATUM['D_WGS_1984',SPHEROID['WGS_1984',6378137.0,298.257223563]],PRIMEM['Greenwich',0.0],UNIT['Degree',0.0174532925199433]];-400 -400 1000000000;-100000 10000;-100000 10000;8.98315284119521E-09;0.001;0.001;IsHighPrecision"
+        outputWS = r'E:\Temp\scratch.gdb'
+        addToSoftware = False
 
         start(adminState,adminCounty,tractNumber,outSpatialRef,outputWS,addToSoftware)
 
