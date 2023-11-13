@@ -1,318 +1,6 @@
-#-------------------------------------------------------------------------------
-# Name:        Extract CLUs by Tract
-# Purpose:
-#
-# Author: Adolfo.Diaz
-#         GIS Specialist
-#         National Soil Survey Center
-#         USDA - NRCS
-# e-mail: adolfo.diaz@usda.gov
-# phone: 608.662.4422 ext. 216
-#
-# Created:     02/27/2020
-# Originallly created for the NRCS Wetland Tools.  This tool can be called via an ArcGIS Pro
-# tool or can be called from another script.
-#
-# ==========================================================================================
-# Modified 7/8/2021
-# Modified the where_clause that is sent to the CLU REST API to use county_ansi_code field
-# instead of admin_county field for Alaska only.
+from utils import AddMsgAndPrint, errorMsg, getPortalTokenInfo
 
-# ==========================================================================================
-# Modified 7/30/2021
-# - Updated getCLUgeometry function to distinguish between an error when submitting a request
-#   to the clu REST API vs. returning no geometry associated with a specific tract.
-#   If any condition is true, the cluFC will also be deleted.
-# - Updated messaging on projecting.  If a transformation method is needed then the message
-#   will be a warning otherwise a simple message will be printed.
 
-
-# ==============================================================================================================================
-def AddMsgAndPrint(msg, severity=0):
-    # prints message to screen if run as a python script
-    # Adds tool message to the geoprocessor
-    #
-    #Split the message on \n first, so that if it's multiple lines, a GPMessage will be added for each line
-    try:
-
-        print(msg)
-        #for string in msg.split('\n'):
-            #Add a geoprocessing message (in case this is run as a tool)
-        if severity == 0:
-            arcpy.AddMessage(msg)
-
-        elif severity == 1:
-            arcpy.AddWarning(msg)
-
-        elif severity == 2:
-            arcpy.AddError("\n" + msg)
-
-    except:
-        pass
-
-# ==============================================================================================================================
-def errorMsg():
-    try:
-
-        exc_type, exc_value, exc_traceback = sys.exc_info()
-        theMsg = "\t" + traceback.format_exception(exc_type, exc_value, exc_traceback)[1] + "\n\t" + traceback.format_exception(exc_type, exc_value, exc_traceback)[-1]
-
-        if theMsg.find("exit") > -1:
-            AddMsgAndPrint("\n\n")
-            pass
-        else:
-            AddMsgAndPrint(theMsg,2)
-
-    except:
-        AddMsgAndPrint("Unhandled error in unHandledException method", 2)
-        pass
-
-# ===================================================================================
-def setScratchWorkspace():
-    """ This function will set the scratchWorkspace for the interim of the execution
-        of this tool.  The scratchWorkspace is used to set the scratchGDB which is
-        where all of the temporary files will be written to.  The path of the user-defined
-        scratchWorkspace will be compared to existing paths from the user's system
-        variables.  If there is any overlap in directories the scratchWorkspace will
-        be set to C:\TEMP, assuming C:\ is the system drive.  If all else fails then
-        the packageWorkspace Environment will be set as the scratchWorkspace. This
-        function returns the scratchGDB environment which is set upon setting the scratchWorkspace"""
-
-    try:
-        AddMsgAndPrint("\nSetting Scratch Workspace")
-        scratchWK = arcpy.env.scratchWorkspace
-
-        # -----------------------------------------------
-        # Scratch Workspace is defined by user or default is set
-        if scratchWK is not None:
-
-            # dictionary of system environmental variables
-            envVariables = os.environ
-
-            # get the root system drive i.e C:
-            if envVariables.has_key('SYSTEMDRIVE'):
-                sysDrive = envVariables['SYSTEMDRIVE']
-            else:
-                sysDrive = None
-
-            varsToSearch = ['ESRI_OS_DATADIR_LOCAL_DONOTUSE','ESRI_OS_DIR_DONOTUSE','ESRI_OS_DATADIR_MYDOCUMENTS_DONOTUSE',
-                            'ESRI_OS_DATADIR_ROAMING_DONOTUSE','TEMP','LOCALAPPDATA','PROGRAMW6432','COMMONPROGRAMFILES','APPDATA',
-                            'USERPROFILE','PUBLIC','SYSTEMROOT','PROGRAMFILES','COMMONPROGRAMFILES(X86)','ALLUSERSPROFILE']
-
-##            """ This is a printout of my system environmmental variables - Windows 7
-##            -----------------------------------------------------------------------------------------
-##            ESRI_OS_DATADIR_LOCAL_DONOTUSE C:\Users\adolfo.diaz\AppData\Local\
-##            ESRI_OS_DIR_DONOTUSE C:\Users\ADOLFO~1.DIA\AppData\Local\Temp\6\arc3765\
-##            ESRI_OS_DATADIR_MYDOCUMENTS_DONOTUSE C:\Users\adolfo.diaz\Documents\
-##            ESRI_OS_DATADIR_COMMON_DONOTUSE C:\ProgramData\
-##            ESRI_OS_DATADIR_ROAMING_DONOTUSE C:\Users\adolfo.diaz\AppData\Roaming\
-##            TEMP C:\Users\ADOLFO~1.DIA\AppData\Local\Temp\6\arc3765\
-##            LOCALAPPDATA C:\Users\adolfo.diaz\AppData\Local
-##            PROGRAMW6432 C:\Program Files
-##            COMMONPROGRAMFILES :  C:\Program Files (x86)\Common Files
-##            APPDATA C:\Users\adolfo.diaz\AppData\Roaming
-##            USERPROFILE C:\Users\adolfo.diaz
-##            PUBLIC C:\Users\Public
-##            SYSTEMROOT :  C:\Windows
-##            PROGRAMFILES :  C:\Program Files (x86)
-##            COMMONPROGRAMFILES(X86) :  C:\Program Files (x86)\Common Files
-##            ALLUSERSPROFILE :  C:\ProgramData """
-##            """------------------------------------------------------------------------------------------"""
-
-            bSetTempWorkSpace = False
-
-            """ Iterate through each Environmental variable; If the variable is within the 'varsToSearch' list
-                above then check their value against the user-set scratch workspace.  If they have anything
-                in common then switch the workspace to something local  """
-            for var in envVariables:
-
-                if not var in varsToSearch:
-                    continue
-
-                # make a list from the scratch and environmental paths
-                varValueList = (envVariables[var].lower()).split(os.sep)          # ['C:', 'Users', 'adolfo.diaz', 'AppData', 'Local']
-                scratchWSList = (scratchWK.lower()).split(os.sep)                 # [u'C:', u'Users', u'adolfo.diaz', u'Documents', u'ArcGIS', u'Default.gdb', u'']
-
-                # remove any blanks items from lists
-                if '' in varValueList: varValueList.remove('')
-                if '' in scratchWSList: scratchWSList.remove('')
-
-                # First element is the drive letter; remove it if they are
-                # the same otherwise review the next variable.
-                if varValueList[0] == scratchWSList[0]:
-                    scratchWSList.remove(scratchWSList[0])
-                    varValueList.remove(varValueList[0])
-
-                # obtain a similarity ratio between the 2 lists above
-                #sM = SequenceMatcher(None,varValueList,scratchWSList)
-
-                # Compare the values of 2 lists; order is significant
-                common = [i for i, j in zip(varValueList, scratchWSList) if i == j]
-
-                if len(common) > 0:
-                    bSetTempWorkSpace = True
-                    break
-
-            # The current scratch workspace shares 1 or more directory paths with the
-            # system env variables.  Create a temp folder at root
-            if bSetTempWorkSpace:
-                AddMsgAndPrint("\tCurrent Workspace: " + scratchWK,0)
-
-                if sysDrive:
-                    tempFolder = sysDrive + os.sep + "TEMP"
-
-                    if not os.path.exists(tempFolder):
-                        os.makedirs(tempFolder,mode=777)
-
-                    arcpy.env.scratchWorkspace = tempFolder
-                    AddMsgAndPrint("\tTemporarily setting scratch workspace to: " + arcpy.env.scratchGDB,1)
-
-                else:
-                    packageWS = [f for f in arcpy.ListEnvironments() if f=='packageWorkspace']
-                    if arcpy.env[packageWS[0]]:
-                        arcpy.env.scratchWorkspace = arcpy.env[packageWS[0]]
-                        AddMsgAndPrint("\tTemporarily setting scratch workspace to: " + arcpy.env.scratchGDB,1)
-                    else:
-                        AddMsgAndPrint("\tCould not set any scratch workspace",2)
-                        return False
-
-            # user-set workspace does not violate system paths; Check for read/write
-            # permissions; if write permissions are denied then set workspace to TEMP folder
-            else:
-                arcpy.env.scratchWorkspace = scratchWK
-
-                if arcpy.env.scratchGDB == None:
-                    AddMsgAndPrint("\tCurrent scratch workspace: " + scratchWK + " is READ only!",0)
-
-                    if sysDrive:
-                        tempFolder = sysDrive + os.sep + "TEMP"
-
-                        if not os.path.exists(tempFolder):
-                            os.makedirs(tempFolder,mode=777)
-
-                        arcpy.env.scratchWorkspace = tempFolder
-                        AddMsgAndPrint("\tTemporarily setting scratch workspace to: " + arcpy.env.scratchGDB,1)
-
-                    else:
-                        packageWS = [f for f in arcpy.ListEnvironments() if f=='packageWorkspace']
-                        if arcpy.env[packageWS[0]]:
-                            arcpy.env.scratchWorkspace = arcpy.env[packageWS[0]]
-                            AddMsgAndPrint("\tTemporarily setting scratch workspace to: " + arcpy.env.scratchGDB,1)
-
-                        else:
-                            AddMsgAndPrint("\tCould not set any scratch workspace",2)
-                            return False
-
-                else:
-                    AddMsgAndPrint("\tUser-defined scratch workspace is set to: "  + arcpy.env.scratchGDB,0)
-
-        # No workspace set (Very odd that it would go in here unless running directly from python)
-        else:
-            AddMsgAndPrint("\tNo user-defined scratch workspace ",0)
-            sysDrive = os.environ['SYSTEMDRIVE']
-
-            if sysDrive:
-                tempFolder = sysDrive + os.sep + "TEMP"
-
-                if not os.path.exists(tempFolder):
-                    os.makedirs(tempFolder,mode=777)
-
-                arcpy.env.scratchWorkspace = tempFolder
-                AddMsgAndPrint("\tTemporarily setting scratch workspace to: " + arcpy.env.scratchGDB,1)
-
-            else:
-                packageWS = [f for f in arcpy.ListEnvironments() if f=='packageWorkspace']
-                if arcpy.env[packageWS[0]]:
-                    arcpy.env.scratchWorkspace = arcpy.env[packageWS[0]]
-                    AddMsgAndPrint("\tTemporarily setting scratch workspace to: " + arcpy.env.scratchGDB,1)
-
-                else:
-                    AddMsgAndPrint("\tCould not set scratchWorkspace. Not even to default!",2)
-                    return False
-
-        #arcpy.Compact_management(arcpy.env.scratchGDB)
-        return arcpy.env.scratchGDB
-
-    except:
-
-        # All Failed; set workspace to packageWorkspace environment
-        try:
-            packageWS = [f for f in arcpy.ListEnvironments() if f=='packageWorkspace']
-            if arcpy.env[packageWS[0]]:
-                arcpy.env.scratchWorkspace = arcpy.env[packageWS[0]]
-                arcpy.Compact_management(arcpy.env.scratchGDB)
-                return arcpy.env.scratchGDB
-            else:
-                AddMsgAndPrint("\tCould not set scratchWorkspace. Not even to default!",2)
-                return False
-        except:
-            errorMsg()
-            return False
-
-# ===================================================================================
-def splitThousands(someNumber):
-    """will determine where to put a thousands seperator if one is needed. Input is
-       an integer.  Integer with or without thousands seperator is returned."""
-
-    try:
-        return re.sub(r'(\d{3})(?=\d)', r'\1,', str(someNumber)[::-1])[::-1]
-
-    except:
-        errorMsg()
-        return someNumber
-
-# ===================================================================================
-def getPortalTokenInfo(portalURL):
-
-    try:
-
-        # Returns the URL of the active Portal
-        # i.e. 'https://gis.sc.egov.usda.gov/portal/'
-        activePortal = arcpy.GetActivePortalURL()
-
-        # {'SSL_enabled': False, 'portal_version': 6.1, 'role': '', 'organization': '', 'organization_type': ''}
-        #portalInfo = arcpy.GetPortalInfo(activePortal)
-
-        # targeted portal is NOT set as default
-        if activePortal != portalURL:
-
-               # List of managed portals
-               managedPortals = arcpy.ListPortalURLs()
-
-               # portalURL is available in managed list
-               if activePortal in managedPortals:
-                   AddMsgAndPrint("\nYour Active portal is set to: " + activePortal,2)
-                   AddMsgAndPrint("Set your active portal and sign into: " + portalURL,2)
-                   return False
-
-               # portalURL must first be added to list of managed portals
-               else:
-                    AddMsgAndPrint("\nYou must add " + portalURL + " to your list of managed portals",2)
-                    AddMsgAndPrint("Open the Portals Tab to manage portal connections",2)
-                    AddMsgAndPrint("For more information visit the following ArcGIS Pro documentation:",2)
-                    AddMsgAndPrint("https://pro.arcgis.com/en/pro-app/help/projects/manage-portal-connections-from-arcgis-pro.htm",1)
-                    return False
-
-        # targeted Portal is correct; try to generate token
-        else:
-
-            # Get Token information
-            tokenInfo = arcpy.GetSigninToken()
-
-            # Not signed in.  Token results are empty
-            if not tokenInfo:
-                AddMsgAndPrint("\nYou are not signed into: " + portalURL,2)
-                return False
-
-            # Token generated successfully
-            else:
-                return tokenInfo
-
-    except:
-        errorMsg()
-        return False
-
-# ===================================================================================
 def submitFSquery(url,INparams):
     """ This function will send a spatial query to a web feature service and convert
         the results into a python structure.  If the results from the service is an
@@ -332,11 +20,6 @@ def submitFSquery(url,INparams):
         if bArcGISPro:
             INparams = INparams.encode('ascii')
             resp = urllib.request.urlopen(url,INparams)  # A failure here will probably throw an HTTP exception
-        # Python 2.7 - ArcMap
-        else:
-            import urllib2
-            req = urllib2.Request(url,INparams)
-            resp = urllib2.urlopen(req)
 
         responseStatus = resp.getcode()
         responseMsg = resp.msg
@@ -378,9 +61,6 @@ def submitFSquery(url,INparams):
                # Python 3.6 - ArcPro
                if bArcGISPro:
                    resp = urllib.request.urlopen(url,newParams)  # A failure here will probably throw an HTTP exception
-               else:
-                   req = urllib2.Request(url,newParams)
-                   resp = urllib2.urlopen(req)
 
                responseStatus = resp.getcode()
                responseMsg = resp.msg
@@ -394,9 +74,6 @@ def submitFSquery(url,INparams):
 
             if bArcGISPro:
                 resp = urllib.request.urlopen(url,INparams)  # A failure here will probably throw an HTTP exception
-            else:
-                req = urllib2.Request(url,INparams)
-                resp = urllib2.urlopen(req)
 
             responseStatus = resp.getcode()
             responseMsg = resp.msg
@@ -675,39 +352,9 @@ def start(state,county,trctNmbr,outSR,outWS,addCLUtoSoftware=False):
                     AddMsgAndPrint("Run the tool from an active map or provide a Coordinate System.  Exiting!",2)
                     exit()
 
-        # Python 2.7 - ArcMap
-        else:
-            bArcGISPro = False
-            import urllib2
-            import urlparse                              # This library is included in urllib in 3.7
-            from urllib2 import HTTPError as httpErrors
-            urllibEncode = urllib.urlencode
-            parseQueryString = urlparse.parse_qsl
-
-            if not bUserDefinedSR:
-
-                # If the tool is invoked by ArcCatalog then the dataframe
-                # properties is not available so a coordinate system
-                # object cannot be obtained.  Exit.
-                try:
-                    mxd = arcpy.mapping.MapDocument(r"CURRENT")
-                    df = arcpy.mapping.ListDataFrames(mxd)[0]
-                    outSpatialRef = df.spatialReference
-                    arcpy.env.outputCoordinateSystem = outSpatialRef
-                except:
-                    AddMsgAndPrint("Could not obtain Spatial Reference from the ArcMap Data Frame",2)
-                    AddMsgAndPrint("Run the tool from within ArcMap or provide a Coordinate System.  Exiting!",2)
-                    exit()
 
         arcpy.env.overwriteOutput = True
         arcpy.env.geographicTransformations = "WGS_1984_(ITRF00)_To_NAD_1983"
-
-##        scratchWS = arcpy.env.scratchWorkspace
-##        scratchWS = r'E:\Temp\scratch.gdb'
-##
-##        if not arcpy.Exists(scratchWS):
-##            scratchWS = setScratchWorkspace()
-##            arcpy.env.scratchWorkspace = scratchWS
 
         """ ---------------------------------------------- ArcGIS Portal Information ---------------------------"""
         nrcsPortal = 'https://gis.sc.egov.usda.gov/portal/'
@@ -784,9 +431,9 @@ def start(state,county,trctNmbr,outSR,outWS,addCLUtoSoftware=False):
         # Report # of fields assembled
         numOfCLUs = int(arcpy.GetCount_management(cluFC)[0])
         if numOfCLUs > 1:
-            AddMsgAndPrint("\nThere are " + splitThousands(numOfCLUs) + " CLU fields associated with tract number " + str(tractNumber))
+            AddMsgAndPrint("\nThere are " + str(numOfCLUs) + " CLU fields associated with tract number " + str(tractNumber))
         else:
-            AddMsgAndPrint("\nThere is " + splitThousands(numOfCLUs) + " CLU field associated with tract number " + str(tractNumber))
+            AddMsgAndPrint("\nThere is " + str(numOfCLUs) + " CLU field associated with tract number " + str(tractNumber))
 
         """ ---------------------------------------------- Project CLU ---------------------------------------------------------------"""
         # Project cluFC to user-defined spatial reference or the spatial
@@ -838,15 +485,6 @@ def start(state,county,trctNmbr,outSR,outWS,addCLUtoSoftware=False):
                     map.addDataFromPath(cluFC)
                     AddMsgAndPrint(os.path.basename(cluFC) + " added to " + map.name + " Map")
 
-            else:
-                # could be executed from ArcCatalog
-                try:
-                    mxd = arcpy.mapping.MapDocument("CURRENT")
-                    df = arcpy.mapping.ListDataFrames(mxd)[0]
-                    cluLayer = arcpy.mapping.Layer(cluFC)
-                    arcpy.mapping.AddLayer(df,cluLayer,"TOP")
-                except:
-                    pass
 
         else:
             return cluFC
