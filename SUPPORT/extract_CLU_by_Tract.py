@@ -1,10 +1,12 @@
+from os import path
+
 from arcgis.gis import GIS
 from arcgis.features import FeatureLayerCollection
 
 from arcpy import Describe, GetParameterAsText, GetParameter, ListTransformations, SetParameterAsText, SpatialReference
 from arcpy.management import Delete, Project, Rename
 
-from utils import AddMsgAndPrint, errorMsg
+from utils import AddMsgAndPrint, errorMsg, importCLUMetadata
 
 
 def extract_CLU(admin_state, admin_county, tract, out_gdb, out_sr):
@@ -50,7 +52,7 @@ def extract_CLU(admin_state, admin_county, tract, out_gdb, out_sr):
             AddMsgAndPrint(f"\nThere is {str(clu_count)} CLU field associated with tract number {str(tract)}")
 
         ### Save and Project Extracted CLU Layer to SR Input ###
-        extracted_CLU_temp = clu_fset.save(out_gdb, 'extracted_CLU')
+        extracted_CLU_temp = clu_fset.save(out_gdb, 'Site_CLU')
         from_sr = Describe(extracted_CLU_temp).spatialReference
         transformation = ListTransformations(from_sr, out_sr)
         if len(transformation):
@@ -79,10 +81,19 @@ def extract_CLU(admin_state, admin_county, tract, out_gdb, out_sr):
 
 
 if __name__ == '__main__':
+
+    ### Tool Input Parameters ###
     admin_state = GetParameterAsText(0)
     admin_county = GetParameterAsText(1)
     tract = GetParameterAsText(2)
     out_gdb = GetParameterAsText(3)
     out_sr = GetParameter(4)
+
+    ### Set Local Paths ###
+    base_dir = path.abspath(path.dirname(__file__)) #\SUPPORT
+    clu_template = path.join(base_dir, 'SUPPORT.gdb', 'Site_CLU_template')
+
+    ### Get CLU and Update Metadata ###
     extracted_CLU = extract_CLU(admin_state, admin_county, tract, out_gdb, SpatialReference(out_sr.factoryCode))
+    importCLUMetadata(clu_template, extracted_CLU)
     SetParameterAsText(5, extracted_CLU)
