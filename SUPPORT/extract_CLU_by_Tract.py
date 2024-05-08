@@ -6,7 +6,7 @@ from arcgis.features import FeatureLayerCollection
 from arcpy import Describe, GetParameterAsText, GetParameter, ListTransformations, SetParameterAsText, SpatialReference
 from arcpy.management import Delete, Project, Rename
 
-from utils import AddMsgAndPrint, errorMsg, importCLUMetadata
+from utils import AddMsgAndPrint, errorMsg, getPortalTokenInfo, importCLUMetadata
 
 
 def extract_CLU(admin_state, admin_county, tract, out_gdb, out_sr):
@@ -88,6 +88,13 @@ if __name__ == '__main__':
     tract = GetParameterAsText(2)
     out_gdb = GetParameterAsText(3)
     out_sr = GetParameter(4)
+
+    ### Validate Portal Connection ###
+    nrcsPortal = 'https://gis.sc.egov.usda.gov/portal/'
+    portalToken = getPortalTokenInfo(nrcsPortal)
+    if not portalToken:
+        AddMsgAndPrint('Could not generate Portal token. Please login to GeoPortal. Exiting...', 2)
+        exit()
 
     ### Set Local Paths ###
     base_dir = path.abspath(path.dirname(__file__)) #\SUPPORT
