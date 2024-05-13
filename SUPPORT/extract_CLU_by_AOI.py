@@ -103,9 +103,9 @@ from arcpy.analysis import SplitByAttributes
 from arcpy.da import InsertCursor, SearchCursor
 from arcpy.management import AddField, CalculateField, CopyFeatures, CreateFeatureclass, Delete, GetCount, MakeFeatureLayer, \
     Rename, SelectLayerByLocation, SubdividePolygon
-from arcpy.mp import ArcGISProject
+from arcpy.mp import ArcGISProject, LayerFile
 
-from utils import AddMsgAndPrint, errorMsg, getPortalTokenInfo, importCLUMetadata
+from utils import AddMsgAndPrint, addLyrxByConnectionProperties, errorMsg, getPortalTokenInfo, importCLUMetadata
 
 
 def submitFSquery(url, INparams):
@@ -359,11 +359,7 @@ def createOutputFC(metadata, outputWS, shape='POLYGON'):
         Return False if error ocurred."""
 
     try:
-        # output FC will the 'CLU_' as a prefix along with AOI name
-        newFC = path.join(outputWS, f"CLU_{path.basename(input_aoi)}")
-
-        AddMsgAndPrint(f"\nCreating New Feature Class: CLU_{path.basename(input_aoi)}")
-        SetProgressorLabel(f"Creating New Feature Class: CLU_{path.basename(input_aoi)}")
+        newFC = path.join(outputWS, 'clu_temp')
 
         # set the spatial Reference to same as WFS
         # Probably WGS_1984_Web_Mercator_Auxiliary_Sphere
@@ -524,6 +520,7 @@ if __name__ == '__main__':
     ### Set Local Paths ###
     base_dir = path.abspath(path.dirname(__file__)) #\SUPPORT
     clu_template = path.join(base_dir, 'SUPPORT.gdb', 'Site_CLU_template')
+    extracted_clu_lyrx = LayerFile(path.join(base_dir, 'layer_files', 'Extracted_CLU.lyrx')).listLayers()[0]
 
     try:
         AOIpath = Describe(input_aoi).catalogPath
@@ -615,7 +612,7 @@ if __name__ == '__main__':
         MakeFeatureLayer(cluFC, 'CLUFC_LYR')
         SelectLayerByLocation('CLUFC_LYR', 'INTERSECT', input_aoi, '', 'NEW_SELECTION')
 
-        newCLUfc = path.join(outputWS, 'clu_temp')
+        newCLUfc = path.join(outputWS, 'Extracted_CLU')
         CopyFeatures('CLUFC_LYR', newCLUfc)
 
         Delete(cluFC)
@@ -623,16 +620,25 @@ if __name__ == '__main__':
 
         env.workspace = outputWS
         importCLUMetadata(clu_template, newCLUfc)
-        Rename(newCLUfc, f"CLU_{path.basename(input_aoi)}")
 
-        AddMsgAndPrint(f"\nThere are {str(GetCount(cluFC)[0])} CLUs in your AOI. Done!\n")
+        AddMsgAndPrint(f"\nThere are {str(GetCount(newCLUfc)[0])} CLUs in your AOI. Done!\n")
 
-        aprx = ArcGISProject('CURRENT')
-        for maps in aprx.listMaps():
-            for lyr in maps.listLayers():
-                if lyr.name == path.basename(input_aoi):
-                    maps.addDataFromPath(cluFC)
-                    break
+        ### Add Extracted CLU to Map and Zoom ###
+        try:
+            aprx = ArcGISProject('CURRENT')
+            map = aprx.listMaps()[0]
+            lyr_name_list = [lyr.longName for lyr in map.listLayers()]
+            addLyrxByConnectionProperties(map, lyr_name_list, extracted_clu_lyrx, outputWS)
+            clu_extent = Describe(newCLUfc).extent
+            clu_extent.XMin = clu_extent.XMin - 100
+            clu_extent.XMax = clu_extent.XMax + 100
+            clu_extent.YMin = clu_extent.YMin - 100
+            clu_extent.YMax = clu_extent.YMax + 100
+            map_view = aprx.activeView
+            map_view.camera.setExtent(clu_extent)
+        except:
+            # No maps in project
+            pass
 
     except:
         errorMsg()
