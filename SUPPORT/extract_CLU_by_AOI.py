@@ -105,7 +105,7 @@ from arcpy.management import AddField, CalculateField, CopyFeatures, CreateFeatu
     Rename, SelectLayerByLocation, SubdividePolygon
 from arcpy.mp import ArcGISProject
 
-from utils import AddMsgAndPrint, errorMsg, getPortalTokenInfo
+from utils import AddMsgAndPrint, errorMsg, getPortalTokenInfo, importCLUMetadata
 
 
 def submitFSquery(url, INparams):
@@ -520,7 +520,11 @@ def getCLUgeometryByExtent(JSONextent, fc, RESTurl):
 if __name__ == '__main__':
     input_aoi = GetParameterAsText(0)
     outputWS = GetParameterAsText(1)
-    
+
+    ### Set Local Paths ###
+    base_dir = path.abspath(path.dirname(__file__)) #\SUPPORT
+    clu_template = path.join(base_dir, 'SUPPORT.gdb', 'Site_CLU_template')
+
     try:
         AOIpath = Describe(input_aoi).catalogPath
 
@@ -618,6 +622,7 @@ if __name__ == '__main__':
         Delete('CLUFC_LYR')
 
         env.workspace = outputWS
+        importCLUMetadata(clu_template, newCLUfc)
         Rename(newCLUfc, f"CLU_{path.basename(input_aoi)}")
 
         AddMsgAndPrint(f"\nThere are {str(GetCount(cluFC)[0])} CLUs in your AOI. Done!\n")
