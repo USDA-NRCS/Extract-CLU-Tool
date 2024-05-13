@@ -9,14 +9,14 @@ from arcpy.management import Delete, Project, Rename
 from utils import AddMsgAndPrint, errorMsg, getPortalTokenInfo, importCLUMetadata
 
 
-def extract_CLU(admin_state, admin_county, tract, out_gdb, out_sr):
+def extract_CLU(admin_state, admin_county, tract_list, out_gdb, out_sr):
     """
     Downloads and projects a CLU field layer from the NRCS Common Land Service layer for local use.
 
     Args:
         admin_state (str): State code string value from GetParameterAsText
         admin_county (str): County code string value from GetParameterAsText
-        tract (str): Tract number string value from GetParameterAsText
+        tract_list (list): Tract number list from multi input
         out_gdb (str): Path to output GBD, remember to include FD in path
         out_sr (SpatialReference): arcpy object defined by user's project
     
@@ -31,12 +31,17 @@ def extract_CLU(admin_state, admin_county, tract, out_gdb, out_sr):
         clu_fl = clu_flc.layers[0]
         AddMsgAndPrint('Located Common Land Units Feature Service in GeoPortal')
 
-        ### Query Feature Service by State/County/Tract ###
-        if admin_state == '02':
-            # Alaska doesn't use Admin_county, they use county_ansi_code
-            query = f"ADMIN_STATE = {str(admin_state)} AND COUNTY_ANSI_CODE = {str(admin_county)} AND TRACT_NUMBER = {str(tract)}"
+        ### Build CLU Query ###
+        state_query = f"ADMIN_STATE = {str(admin_state)} "
+        if admin_state == '02': #Alaska uses county ANSI code
+            county_query = f"AND COUNTY_ANSI_CODE = {str(admin_county)} "
         else:
-            query = f"ADMIN_STATE = {str(admin_state)} AND ADMIN_COUNTY = {str(admin_county)} AND TRACT_NUMBER = {str(tract)}"
+            county_query = f"AND ADMIN_COUNTY = {str(admin_county)} "
+        if len(tract_list) == 1:
+            tract_query = f"AND TRACT_NUMBER = {str(tract_list[0])}"
+        else:
+            tract_query = f"AND TRACT_NUMBER IN {str(tuple(tract_list))}"
+        query = state_query + county_query + tract_query
         
         AddMsgAndPrint(f"Querying USDA-NRCS GeoPortal for CLU fields where: {query}")
         clu_fset = clu_fl.query(where=query)
@@ -44,12 +49,12 @@ def extract_CLU(admin_state, admin_county, tract, out_gdb, out_sr):
 
         ### Validate Number of CLUs Returned ###
         if clu_count == 0:
-            AddMsgAndPrint(f"\nThere were no CLU fields associated with tract Number {str(tract)}. Please review Admin State, County, and Tract Number entered.", 1)
+            AddMsgAndPrint(f"\nThere were no CLU fields associated with tract number(s) {str(tract_list)}. Please review Admin State, County, and Tract Number entered.", 1)
             return False
         if clu_count > 1:
-            AddMsgAndPrint(f"\nThere are {str(clu_count)} CLU fields associated with tract number {str(tract)}")
+            AddMsgAndPrint(f"\nThere are {str(clu_count)} CLU fields associated with tract number(s) {str(tract_list)}")
         else:
-            AddMsgAndPrint(f"\nThere is {str(clu_count)} CLU field associated with tract number {str(tract)}")
+            AddMsgAndPrint(f"\nThere is {str(clu_count)} CLU field associated with tract number(s) {str(tract_list)}")
 
         ### Save and Project Extracted CLU Layer to SR Input ###
         extracted_CLU_temp = clu_fset.save(out_gdb, 'Site_CLU')
@@ -85,7 +90,7 @@ if __name__ == '__main__':
     ### Tool Input Parameters ###
     admin_state = GetParameterAsText(0)
     admin_county = GetParameterAsText(1)
-    tract = GetParameterAsText(2)
+    tract_list = GetParameterAsText(2)
     out_gdb = GetParameterAsText(3)
     out_sr = GetParameter(4)
 
@@ -96,11 +101,14 @@ if __name__ == '__main__':
         AddMsgAndPrint('Could not generate Portal token. Please login to GeoPortal. Exiting...', 2)
         exit()
 
+    ### Parse Input Tracts into List ###
+    tract_list = tract_list.split(';')
+
     ### Set Local Paths ###
     base_dir = path.abspath(path.dirname(__file__)) #\SUPPORT
     clu_template = path.join(base_dir, 'SUPPORT.gdb', 'Site_CLU_template')
 
     ### Get CLU and Update Metadata ###
-    extracted_CLU = extract_CLU(admin_state, admin_county, tract, out_gdb, SpatialReference(out_sr.factoryCode))
+    extracted_CLU = extract_CLU(admin_state, admin_county, tract_list, out_gdb, SpatialReference(out_sr.factoryCode))
     importCLUMetadata(clu_template, extracted_CLU)
     SetParameterAsText(5, extracted_CLU)
