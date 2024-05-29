@@ -3,10 +3,11 @@ from os import path
 from arcgis.gis import GIS
 from arcgis.features import FeatureLayerCollection
 
-from arcpy import Describe, GetParameterAsText, GetParameter, ListTransformations, SetParameterAsText, SpatialReference
+from arcpy import Describe, env, GetParameterAsText, GetParameter, ListTransformations, SetParameterAsText, SpatialReference
 from arcpy.management import Delete, Project, Rename
+from arcpy.mp import ArcGISProject, LayerFile
 
-from utils import AddMsgAndPrint, errorMsg, getPortalTokenInfo, importCLUMetadata
+from utils import AddMsgAndPrint, addLyrxByConnectionProperties, errorMsg, getPortalTokenInfo, importCLUMetadata
 
 
 def extract_CLU(admin_state, admin_county, tract_list, out_gdb, out_sr):
@@ -57,7 +58,7 @@ def extract_CLU(admin_state, admin_county, tract_list, out_gdb, out_sr):
             AddMsgAndPrint(f"\nThere is {str(clu_count)} CLU field associated with tract number(s) {str(tract_list)}")
 
         ### Save and Project Extracted CLU Layer to SR Input ###
-        extracted_CLU_temp = clu_fset.save(out_gdb, 'Site_CLU')
+        extracted_CLU_temp = clu_fset.save(out_gdb, 'Extracted_CLU')
         from_sr = Describe(extracted_CLU_temp).spatialReference
         transformation = ListTransformations(from_sr, out_sr)
         if len(transformation):
@@ -87,6 +88,8 @@ def extract_CLU(admin_state, admin_county, tract_list, out_gdb, out_sr):
 
 if __name__ == '__main__':
 
+    env.overwriteOutput = True
+
     ### Tool Input Parameters ###
     admin_state = GetParameterAsText(0)
     admin_county = GetParameterAsText(1)
@@ -107,8 +110,26 @@ if __name__ == '__main__':
     ### Set Local Paths ###
     base_dir = path.abspath(path.dirname(__file__)) #\SUPPORT
     clu_template = path.join(base_dir, 'SUPPORT.gdb', 'Site_CLU_template')
+    extracted_clu_lyrx = LayerFile(path.join(base_dir, 'layer_files', 'Extracted_CLU.lyrx')).listLayers()[0]
 
     ### Get CLU and Update Metadata ###
     extracted_CLU = extract_CLU(admin_state, admin_county, tract_list, out_gdb, SpatialReference(out_sr.factoryCode))
     importCLUMetadata(clu_template, extracted_CLU)
-    SetParameterAsText(5, extracted_CLU)
+    
+    ### Add Extracted CLU to Map and Zoom ###
+    try:
+        aprx = ArcGISProject('CURRENT')
+        map = aprx.listMaps()[0]
+        lyr_name_list = [lyr.longName for lyr in map.listLayers()]
+        addLyrxByConnectionProperties(map, lyr_name_list, extracted_clu_lyrx, out_gdb)
+        clu_extent = Describe(extracted_CLU).extent
+        clu_extent.XMin = clu_extent.XMin - 100
+        clu_extent.XMax = clu_extent.XMax + 100
+        clu_extent.YMin = clu_extent.YMin - 100
+        clu_extent.YMax = clu_extent.YMax + 100
+        map_view = aprx.activeView
+        map_view.camera.setExtent(clu_extent)
+    except:
+        # No maps in project
+        pass
+    
